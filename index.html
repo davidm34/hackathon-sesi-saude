@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coleta de Dados</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chosen Palette: Emerald (Primary) & Slate (Neutral) -->
+    <!-- Application Structure Plan: 
+         A estrutura foi simplificada para um "Fluxo de Coleta de Dados" de página única.
+         1. Header: Contexto e Instruções para o Cliente.
+         2. Área de Entrada de Dados (Main Form): Fluxo linear de 112 campos organizados em Seções Temáticas Lógicas (Dados Pessoais, Endereço, etc.) para guiar o usuário ("Goal: Organize"). A ênfase é na clareza dos campos obrigatórios.
+         3. Pré-visualização e Gestão (Data Grid): Tabela interativa para revisar, excluir e monitorar o progresso dos registros antes da exportação final.
+         4. Exportação: Ação final para gerar o CSV no formato estrito exigido.
+         5. Notificações: Uso de Toast para feedback visual não invasivo.
+    -->
+
+    <!-- Visualization & Content Choices:
+         1. Gráficos: Removidos. O foco é na coleta de dados, não na análise.
+         2. Ícones: Utilização de Caracteres Unicode (e.g., 📝, 📥) para elementos visuais.
+         3. Layout: Layout de formulário de página única, totalmente responsivo com Tailwind, priorizando a legibilidade dos 112 campos através de agrupamentos.
+    -->
+
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        .custom-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #10B981; 
+            border-radius: 4px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #059669; 
+        }
+
+        .required-marker { color: #DC2626; font-weight: bold; margin-left: 2px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <!-- Top Navigation / Header -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <span class="text-2xl mr-2">📝</span>
+                    <h1 class="text-xl font-bold text-slate-800 tracking-tight">Coleta de Dados <span class="text-emerald-600">eSocial Modelo 1</span></h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-sm text-slate-500 hidden sm:block">
+                        <span class="font-semibold text-emerald-600" id="totalRecordsDisplay">0</span> registros prontos
+                    </div>
+                    <button onclick="scrollToExport()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm">
+                        Exportar Tabela
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+        <!-- Section 1: Instructions & Context for the Client -->
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div class="prose max-w-none">
+                <h2 class="text-lg font-semibold text-slate-900 mb-2">Instruções Importantes</h2>
+                <p class="text-slate-600">
+                    Por favor, preencha os dados de cada funcionário abaixo. O sistema foi organizado para garantir que o arquivo final esteja no formato exato de <strong>112 colunas</strong> exigido para a importação.
+                </p>
+                
+                <!-- LEGENDA COMPLETA ADICIONADA AQUI -->
+                <div class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <h3 class="font-bold text-sm text-slate-700 mb-2">LEGENDA DA PLANILHA</h3>
+                    <ul class="text-sm space-y-1">
+                        <li class="flex items-center">
+                            <span class="text-red-600 font-bold mr-2 text-md">🔴</span>
+                            <span class="font-semibold text-red-700">Campos obrigatórios</span>: Marcação <span class="required-marker">*</span> no formulário.
+                        </li>
+                        <li class="flex items-center">
+                            <span class="text-gray-500 font-bold mr-2 text-md">⚪</span>
+                            <span class="text-gray-700">Campo opcionais</span>: Não possuem marcação <span class="required-marker">*</span>.
+                        </li>
+                        <li class="flex items-center">
+                            <span class="text-blue-500 font-bold mr-2 text-md">🔵</span>
+                            <span class="text-gray-700">Campos obrigatórios ou opcionais dependendo da parametrização utilizada</span>: Não possuem marcação <span class="required-marker">*</span> neste formulário, mas podem se tornar obrigatórios dependendo da configuração do eSocial.
+                        </li>
+                    </ul>
+                </div>
+                <!-- FIM LEGENDA COMPLETA -->
+
+                <p class="text-sm text-slate-500 mt-2 italic">
+                    Ao terminar cada cadastro, clique em "Salvar Registro". Você pode adicionar quantos funcionários forem necessários.
+                </p>
+            </div>
+        </section>
+
+        <!-- Section 2: Data Entry Form (The Core Interaction) -->
+        <section class="bg-white rounded-xl shadow-lg border border-emerald-100 overflow-hidden">
+            <div class="bg-slate-900 px-6 py-4 flex justify-between items-center">
+                <h2 class="text-white text-lg font-semibold flex items-center">
+                    <span class="mr-2">👤</span> Novo Funcionário
+                </h2>
+                <button type="button" onclick="clearForm()" class="text-slate-300 hover:text-white text-sm underline">Limpar Formulário</button>
+            </div>
+            
+            <div class="p-6">
+                <!-- DYNAMIC FORM CONTAINER -->
+                <form id="eSocialForm">
+                    <div class="max-h-[700px] overflow-y-auto custom-scroll scroll-smooth p-2" id="formScrollArea">
+                        <div id="dynamicFieldsContainer" class="space-y-8">
+                            <!-- Fields will be injected here by JS -->
+                        </div>
+                    </div>
+                    
+
+                    <div class="mt-8 pt-6 border-t border-slate-200 flex justify-end">
+                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-lg shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 flex items-center">
+                            <span class="mr-2">💾</span> Salvar Registro
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- Section 3: Data Preview (Table) and Export Control -->
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" id="previewSection">
+            <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                <h3 class="font-bold text-slate-700">Registros Prontos para Exportação (<span id="countDisplay">0</span>)</h3>
+                <button onclick="clearAllData()" class="text-red-500 hover:text-red-700 text-sm font-medium">Excluir Tudo</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Ações</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Matrícula</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Nome</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Cargo</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">CPF</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Admissão</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewBody" class="bg-white divide-y divide-slate-200">
+                        <!-- Rows injected via JS -->
+                        <tr>
+                            <td colspan="6" class="px-6 py-10 text-center text-slate-400 italic">
+                                Nenhum registro adicionado ainda.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Section 4: Export Action -->
+        <section class="flex justify-center pb-12" id="exportSection">
+            <button onclick="downloadCSV()" id="mainExportBtn" class="group relative inline-flex items-center justify-center p-0.5 mb-2 mr-2 overflow-hidden text-sm font-medium text-gray-900 rounded-lg group bg-gradient-to-br from-emerald-600 to-green-500 group-hover:from-emerald-600 group-hover:to-green-500 hover:text-white focus:ring-4 focus:outline-none focus:ring-green-200 opacity-50 cursor-not-allowed" disabled>
+                <span class="relative px-8 py-3.5 transition-all ease-in duration-75 bg-white rounded-md group-hover:bg-opacity-0 text-lg font-bold">
+                    📥 Baixar Tabela CSV (112 Colunas)
+                </span>
+            </button>
+        </section>
+
+    </main>
+
+    <!-- Feedback Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-xl transform translate-y-20 opacity-0 transition-all duration-300 flex items-center z-50">
+        <span id="toastMsg">Mensagem</span>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        
+        const HEADERS_LIST = [
+            "Cod.Unid", "Nome Unidade", "Cod.Setor", "Nome Setor", "Cod.Cargo", "Nome Cargo", 
+            "Matrícula", "Cod Funcionário", "Nome Funcionário", "Dt.Nascimento", "Sexo", "Situação", 
+            "Dt.Admissão", "Dt.Demissão", "Estado Civil", "Pis/Pasep", "Contratação", "Rg", 
+            "UF-RG", "CPF", "CTPS", "Endereço", "Bairro", "Cidade", "UF", "Cep", "Tel", 
+            "Naturalidade", "Cor", "E-mail", "Deficiencia", "CBO", "GFIP", "Endereço Unidade", 
+            "Bairro Unidade", "Cidade Unidade", "Estado Unidade", "Cep Unidade", "CNPJ Unidade", 
+            "Inscrição Unidade", "Tel1 Unidade", "Tel2 Unidade", "Tel3 Unidade", "Tel4 Unidade", 
+            "Contato Unid", "Cnae", "Número Endereço Funcionário", "Complemento Endereço Funcionário", 
+            "Razão Social Unid.", "Nome da Mae do Funcionário", "Cod.Centro Custo", "Dt. Ultima Movimentação", 
+            "Cod. Unidade contratante", "Razão Social", "CNPJ", "Turno", "Dt.Emissão.Cart.Prof", 
+            "Série CTPS", "CNAE 2.0", "CNAE Livre", "Descrição CNAE Livre", "CEI", "Função", 
+            "CNAE 7", "Tipo de CNAE Utilizado", "Descrição Detalhada do Cargo", "Nº endereço Unidade", 
+            "Complemento endereço Unidade", "Regime de Revezamento", "Orgão Expedidor do RG", "Campo Livre 1", 
+            "Campo Livre 2", "Campo Livre 3", "Telefone SMS", "Grau de Risco", "UF CTPS", "Nome Centro Custo", 
+            "Autoriza SMS", "Endereço Cobrança Unidade", "Número Endereço Cobrança Unidade", 
+            "Bairro Cobrança Unidade", "Cidade Cobrança Unidade", "Estado Cobrança Unidade", 
+            "Cep Cobrança Unidade", "Complemento Endereço Cobrança Unidade", "Remuneração Mensal (R$)", 
+            "Telefone Comercial", "Telefone Celular", "Data Emissão RG", "Código do País de Nascimento", 
+            "Origem Descrição Detalhada", "Unidade Contratante", "Escolaridade", "Código Categoria (eSocial)", 
+            "Matrícula RH", "Gênero", "Nome Social", "Tipo de Admissão", "Grau de Instrução", 
+            "Nome do Pai do Funcionário", "Tipo de Vínculo", "Nome do Turno", "Campo Livre 4", 
+            "CPF Unidade", "CAEPF Unidade", "Tipo Sanguíneo", "Dt. Inicio Periodo Aquisitivo", 
+            "Dt. Fim Periodo Aquisitivo", "CNO Unidade", "Desconsiderar para o eSocial", 
+            "Dt. Validade RG", "Desconsiderar Unidade para o eSocial"
+        ];
+
+        const REQUIRED_INDICES = [0, 1, 5, 6, 8, 9, 10, 12, 19, 21, 23, 24, 47];
+        const DATE_INDICES = [9, 12, 13, 51, 56, 88, 106, 107, 110];
+        
+        const SECTIONS = {
+            0: { title: "1. Dados da Unidade e Cargo" },
+            8: { title: "2. Identificação e Documentos (Funcionário)" },
+            21: { title: "3. Endereço e Contato (Funcionário)" },
+            33: { title: "4. Detalhes da Unidade (CNPJ, Endereço)" },
+            50: { title: "5. Dados Contratuais, Custos e Profissionais" },
+            79: { title: "6. Endereço de Cobrança da Unidade" },
+            86: { title: "7. Remuneração e Outras Datas" }
+        };
+
+        let db = [];
+
+        function showToast(msg, type) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            
+            toastMsg.textContent = msg;
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-xl transform transition-all duration-300 flex items-center z-50 ${type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`;
+            
+            setTimeout(() => toast.classList.remove('translate-y-20', 'opacity-0'), 10);
+            
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+        }
+
+        function init() {
+            renderForm();
+            updatePreviewTable();
+        }
+
+        function renderForm() {
+            const container = document.getElementById('dynamicFieldsContainer');
+            let currentGrid = null;
+
+            HEADERS_LIST.forEach((header, index) => {
+                if (SECTIONS[index]) {
+                    const sectionDiv = document.createElement('div');
+                    sectionDiv.className = "pt-6 mb-4 col-span-full";
+                    sectionDiv.innerHTML = `
+                        <h3 class="text-xl font-bold text-slate-800 border-b border-emerald-500 pb-1 mb-4 mt-2">
+                            ${SECTIONS[index].title}
+                        </h3>
+                    `;
+                    container.appendChild(sectionDiv);
+                    
+                    currentGrid = document.createElement('div');
+                    currentGrid.className = "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6";
+                    container.appendChild(currentGrid);
+                }
+
+                if (!currentGrid) {
+                    currentGrid = document.createElement('div');
+                    currentGrid.className = "grid grid-cols-1 md:grid-cols-2 gap-4";
+                    container.appendChild(currentGrid);
+                }
+
+                const wrapper = document.createElement('div');
+                const isRequired = REQUIRED_INDICES.includes(index);
+                
+                const label = document.createElement('label');
+                label.className = "block text-sm font-medium text-slate-700 mb-1";
+                label.innerHTML = `${header} ${isRequired ? '<span class="required-marker">*</span>' : ''}`;
+                
+                let input;
+                if (index === 10) { 
+                    input = document.createElement('select');
+                    input.innerHTML = `<option value="">Selecione</option><option value="M">Masculino</option><option value="F">Feminino</option><option value="O">Outro</option>`;
+                } else if (index === 11) { 
+                     input = document.createElement('input');
+                     input.type = 'text';
+                     input.value = 'A';
+                } else {
+                    input = document.createElement('input');
+                    input.type = DATE_INDICES.includes(index) ? 'date' : 'text';
+                }
+
+                input.id = `f_${index}`;
+                input.name = `f_${index}`;
+                input.className = "w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm border p-2.5 transition-shadow";
+                if (isRequired) input.required = true;
+
+                if (index === 0) input.value = "001";
+                if (index === 1) input.value = "Matriz";
+                if (index === 18) input.value = "SP";
+                if (index === 24) input.value = "SP";
+                if (index === 90) input.value = "105";
+
+                wrapper.appendChild(label);
+                wrapper.appendChild(input);
+                currentGrid.appendChild(wrapper);
+            });
+        }
+
+        document.getElementById('eSocialForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const row = new Array(HEADERS_LIST.length).fill("");
+            HEADERS_LIST.forEach((_, i) => {
+                const el = document.getElementById(`f_${i}`);
+                if (el) row[i] = el.value.trim();
+            });
+
+            db.push(row);
+            
+            updatePreviewTable();
+            toggleExportBtn();
+            
+            this.reset();
+            document.getElementById('f_0').value = "001";
+            document.getElementById('f_1').value = "Matriz";
+            document.getElementById('f_11').value = "A";
+            document.getElementById('f_18').value = "SP";
+            document.getElementById('f_24').value = "SP";
+            document.getElementById('f_90').value = "105";
+
+            showToast("Registro adicionado com sucesso!", "success");
+            document.getElementById('formScrollArea').scrollTop = 0;
+        });
+
+        function updatePreviewTable() {
+            const tbody = document.getElementById('previewBody');
+            const countDisplay = document.getElementById('countDisplay');
+            const totalRecordsDisplay = document.getElementById('totalRecordsDisplay');
+            
+            countDisplay.innerText = db.length;
+            totalRecordsDisplay.innerText = db.length;
+
+            if (db.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-10 text-center text-slate-400 italic">Nenhum registro adicionado ainda.</td></tr>`;
+                return;
+            }
+
+            const recent = db.slice().reverse().slice(0, 5);
+            
+            tbody.innerHTML = recent.map((row, idx) => {
+                const originalIdx = db.length - 1 - idx;
+                return `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="removeRecord(${originalIdx})" class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded">Excluir</button>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900">${row[6]}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900 font-semibold">${row[8]}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">${row[5]}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">${row[19]}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">${formatDate(row[12])}</td>
+                </tr>
+                `;
+            }).join('');
+        }
+
+        function removeRecord(index) {
+            if (confirm("Remover este registro?")) {
+                db.splice(index, 1);
+                updatePreviewTable();
+                toggleExportBtn();
+                showToast("Registro removido.", "error");
+            }
+        }
+
+        function clearAllData() {
+            if (confirm("ATENÇÃO: Isso apagará TODOS os registros inseridos. Continuar?")) {
+                db = [];
+                updatePreviewTable();
+                toggleExportBtn();
+                showToast("Todos os dados foram limpos.", "error");
+            }
+        }
+
+        function clearForm() {
+            if (confirm("Limpar formulário atual?")) {
+                document.getElementById('eSocialForm').reset();
+            }
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr || !dateStr.includes('-')) return dateStr;
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+
+        function toggleExportBtn() {
+            const btn = document.getElementById('mainExportBtn');
+            if (db.length > 0) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.classList.add('cursor-pointer', 'opacity-100');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                btn.classList.remove('cursor-pointer', 'opacity-100');
+            }
+        }
+
+        function scrollToExport() {
+            document.getElementById('exportSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function downloadCSV() {
+            if (db.length === 0) {
+                showToast("Nenhum dado para exportar!", "error");
+                return;
+            }
+
+            // 1. Title Line
+            let csvContent = "Modelo 1" + ",".repeat(HEADERS_LIST.length - 1) + "\n";
+            
+            // 2. Headers Line
+            csvContent += HEADERS_LIST.map(h => `"${h}"`).join(",") + "\n";
+
+            // 3. Data Lines
+            db.forEach(row => {
+                const formattedRow = row.map((val, idx) => {
+                    if (val && DATE_INDICES.includes(idx)) {
+                        return formatDate(val);
+                    }
+                    if (typeof val === 'string') {
+                        const clean = val.replace(/"/g, '""').replace(/\n/g, ' ');
+                        if (clean.includes(',') || clean.includes('"')) {
+                            return `"${clean}"`;
+                        }
+                        return clean;
+                    }
+                    return val;
+                });
+                csvContent += formattedRow.join(",") + "\n";
+            });
+
+            const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "Coleta_Dados_Cliente_eSocial.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast("Download iniciado!", "success");
+        }
+
+        init();
+
+    </script>
+</body>
+</html>
