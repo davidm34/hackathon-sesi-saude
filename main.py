@@ -1,17 +1,15 @@
 import os
-import shutil
-from datetime import datetime
-from typing import List, Any
+import re
+from typing import List, Any, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import openpyxl
-import xlrd # Necessário para ler arquivos .xls antigos
+import xlrd
 
 app = FastAPI()
 
-# --- Configuração CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,11 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Diretórios
+# --- Configurações ---
 UPLOAD_DIR = "arquivos_recebidos"
-OUTPUT_DIR = "arquivos_gerados"
-
-# Nomes esperados para o modelo
+OUTPUT_DIR = "banco_de_dados_clientes"
 TEMPLATE_XLSX = "modelo.xlsx"
 TEMPLATE_XLS = "modelo.xls"
 
@@ -34,80 +30,115 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 class DadosPlanilha(BaseModel):
     dados: List[List[Any]]
 
-def carregar_modelo():
-    """
-    Tenta carregar o modelo. 
-    Se for .xlsx, usa openpyxl direto.
-    Se for .xls, usa xlrd para ler e converte para openpyxl.
-    """
-    # 1. Tenta carregar .xlsx (Preferencial)
-    if os.path.exists(TEMPLATE_XLSX):
-        print(f"Usando modelo .xlsx: {TEMPLATE_XLSX}")
-        return openpyxl.load_workbook(TEMPLATE_XLSX)
-    
-    # 2. Se não houver, tenta carregar .xls e converter
-    elif os.path.exists(TEMPLATE_XLS):
-        print(f"Modelo .xls encontrado: {TEMPLATE_XLS}. Convertendo dados...")
-        try:
-            # Lê o arquivo antigo
-            rb = xlrd.open_workbook(TEMPLATE_XLS)
-            sheet_old = rb.sheet_by_index(0)
-            
-            # Cria um novo workbook moderno em memória
-            wb_new = openpyxl.Workbook()
-            ws_new = wb_new.active
-            ws_new.title = "Modelo 1" # Ou sheet_old.name
+# --- Índices baseados no seu Frontend (index.html) ---
+IDX_NOME = 1          # Nome Unidade
+IDX_CNPJ = 38         # CNPJ Unidade
+IDX_CPF = 109         # CPF Unidade
+IDX_CAEPF = 110       # CAEPF Unidade
+IDX_CNO = 113         # CNO Unidade (Ajuste se necessário conforme sua lista exata)
 
-            # Copia os dados do antigo para o novo (célula a célula)
-            for r in range(sheet_old.nrows):
-                row_values = sheet_old.row_values(r)
-                ws_new.append(row_values)
-            
-            return wb_new
-        except Exception as e:
-            raise Exception(f"Erro ao converter .xls: {str(e)}")
-    
+def sanitizar_valor(valor) -> str:
+    """Remove pontuação e espaços extras de documentos e nomes."""
+    if not valor:
+        return ""
+    # Converte para string e remove caracteres que não sejam letras ou números
+    s = str(valor).strip()
+    return re.sub(r'[^\w\s]', '', s) # Mantém letras, números e espaços
+
+def gerar_id_unico(linha: List[Any]) -> str:
+    """
+    Cria um ID único para o arquivo baseado na hierarquia:
+    CNPJ > CNO > CAEPF > CPF > Nome
+    """
+    # Extrai valores das colunas (com segurança caso a linha seja curta)
+    nome = sanitizar_valor(linha[IDX_NOME]) if len(linha) > IDX_NOME else "SemNome"
+    cnpj = sanitizar_valor(linha[IDX_CNPJ]) if len(linha) > IDX_CNPJ else ""
+    cno = sanitizar_valor(linha[IDX_CNO]) if len(linha) > IDX_CNO else ""
+    caepf = sanitizar_valor(linha[IDX_CAEPF]) if len(linha) > IDX_CAEPF else ""
+    cpf = sanitizar_valor(linha[IDX_CPF]) if len(linha) > IDX_CPF else ""
+
+    # Lógica de Prioridade para o Prefixo do Arquivo
+    prefixo = ""
+    if cnpj:
+        prefixo = cnpj # CNPJ completo diferencia Filial (0002) de Matriz (0001)
+    elif cno:
+        prefixo = "CNO_" + cno
+    elif caepf:
+        prefixo = "CAEPF_" + caepf
+    elif cpf:
+        prefixo = "CPF_" + cpf
     else:
-        return None
+        # Se não tiver documento nenhum, usa um hash simples ou apenas o nome
+        prefixo = "SEM_DOC"
+
+    # Monta o nome final: DOC_NOME.xlsx (Substitui espaços do nome por _)
+    nome_arquivo = f"{prefixo}_{nome.replace(' ', '_')}"
+    
+    # Limita tamanho para não dar erro no Windows (max 255 chars) e garante segurança
+    return nome_arquivo[:100]
+
+def carregar_template():
+    if os.path.exists(TEMPLATE_XLSX):
+        return openpyxl.load_workbook(TEMPLATE_XLSX)
+    elif os.path.exists(TEMPLATE_XLS):
+        # Conversão rápida de .xls antigo
+        rb = xlrd.open_workbook(TEMPLATE_XLS)
+        sheet_old = rb.sheet_by_index(0)
+        wb_new = openpyxl.Workbook()
+        ws_new = wb_new.active
+        ws_new.title = "Modelo 1"
+        for r in range(sheet_old.nrows):
+            ws_new.append(sheet_old.row_values(r))
+        return wb_new
+    else:
+        raise FileNotFoundError("Modelo não encontrado.")
 
 @app.post("/gerar-excel/")
-def gerar_excel(payload: DadosPlanilha):
+def processar_dados_clientes(payload: DadosPlanilha):
     try:
-        wb = carregar_modelo()
-        
-        if wb is None:
-             return {
-                 "status": "erro", 
-                 "mensagem": f"Nenhum arquivo modelo encontrado. Adicione '{TEMPLATE_XLSX}' ou '{TEMPLATE_XLS}' na pasta."
-             }
+        if not payload.dados:
+            return {"status": "erro", "mensagem": "Vazio"}
 
-        ws = wb.active
+        # 1. Agrupar linhas pelo ID ÚNICO (Documento + Nome)
+        grupos: Dict[str, List[List[Any]]] = {}
 
-        # Descobre a próxima linha vazia
-        # Nota: Se convertemos de .xls, o append já preencheu as linhas.
-        start_row = ws.max_row + 1
+        for linha in payload.dados:
+            id_unico = gerar_id_unico(linha)
+            
+            if id_unico not in grupos:
+                grupos[id_unico] = []
+            grupos[id_unico].append(linha)
 
-        # Adiciona os novos dados recebidos do frontend
-        for row_data in payload.dados:
-            ws.append(row_data)
+        arquivos_gerados = []
 
-        # Gera nome do arquivo
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"Exportacao_eSocial_{timestamp}.xlsx"
-        file_path = os.path.join(OUTPUT_DIR, filename)
+        # 2. Salvar cada grupo em seu arquivo
+        for id_arquivo, linhas in grupos.items():
+            nome_arquivo = f"{id_arquivo}.xlsx"
+            caminho = os.path.join(OUTPUT_DIR, nome_arquivo)
 
-        # Salva como .xlsx (Sempre salvamos no formato novo)
-        wb.save(file_path)
-        print(f"Arquivo gerado: {file_path}")
+            # Abre existente ou cria novo
+            if os.path.exists(caminho):
+                wb = openpyxl.load_workbook(caminho)
+                ws = wb.active
+            else:
+                wb = carregar_template()
+                ws = wb.active
+
+            # Adiciona dados
+            for row in linhas:
+                ws.append(row)
+
+            wb.save(caminho)
+            arquivos_gerados.append(nome_arquivo)
 
         return {
-            "status": "ok", 
-            "mensagem": f"Arquivo gerado com sucesso em: {file_path}",
-            "arquivo": filename
+            "status": "ok",
+            "mensagem": f"Sucesso! {len(arquivos_gerados)} arquivos processados.",
+            "detalhes": arquivos_gerados
         }
 
     except Exception as e:
-        print(f"Erro crítico: {e}")
+        print(f"Erro: {e}")
         return {"status": "erro", "mensagem": str(e)}
 
 if __name__ == "__main__":
